@@ -39,6 +39,7 @@ app.use((req, res, next) => {
 // Mount API routes
 app.use('/api/firmware', firmwareRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/config', uploadRoutes); // Configuration endpoints
 app.use('/deviceapi', otadriveRoutes); // OTAdrive-style endpoint
 
 const PORT = CONFIG.port || process.env.PORT || 3000;
