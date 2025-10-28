@@ -220,6 +220,21 @@
               </select>
             </div>
             <button class="btn btn-success" id="downloadBtn">Download Firmware</button>
+
+            <div class="form-group" style="margin-top: 20px;">
+              <label><strong>API URLs for Selected Group:</strong></label>
+              <div id="apiUrls" style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 14px; margin-top: 10px;">
+                <div><strong>Check Firmware Version:</strong></div>
+                <div id="checkUrl" style="color: #4ec9b0; margin: 5px 0; word-break: break-all;">Select a group to see URL</div>
+                <div style="margin-top: 10px;"><strong>Download Firmware:</strong></div>
+                <div id="downloadUrl" style="color: #4ec9b0; margin: 5px 0; word-break: break-all;">Select a group to see URL</div>
+                <div style="margin-top: 10px; color: #888; font-size: 12px;">
+                  <strong>Headers required:</strong><br>
+                  x-device-id: [Your ESP32 Chip ID]<br>
+                  x-api-key: [Group API Key shown above]
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="card">
@@ -587,6 +602,20 @@
       addConsoleEntry('Console cleared', 'warning');
     });
 
+    // Update API URLs when group selection changes
+    document.getElementById('downloadGroup').addEventListener('change', (e) => {
+      const groupId = e.target.value;
+      const baseUrl = window.location.origin;
+
+      if (groupId) {
+        document.getElementById('checkUrl').textContent = `${baseUrl}/deviceapi/check?device_id=[ESP32_CHIP_ID]&api_key=[GROUP_API_KEY]`;
+        document.getElementById('downloadUrl').textContent = `${baseUrl}/deviceapi/firmware.bin?group_id=${groupId}&device_id=[ESP32_CHIP_ID]&api_key=[GROUP_API_KEY]`;
+      } else {
+        document.getElementById('checkUrl').textContent = 'Select a group to see URL';
+        document.getElementById('downloadUrl').textContent = 'Select a group to see URL';
+      }
+    });
+
     // Download firmware handler
     document.getElementById('downloadBtn').addEventListener('click', () => {
       const groupId = document.getElementById('downloadGroup').value;
@@ -643,6 +672,7 @@
               <h4>Device ID: ${device.id}</h4>
               <p><strong>First Seen:</strong> ${new Date(device.firstSeen).toLocaleString()}</p>
               <p><strong>Connection Attempts:</strong> ${device.connectionCount || 1}</p>
+              <p><strong>Provided API Key:</strong> ${device.providedApiKey || 'None'}</p>
               <select id="groupSelect_${device.id}" style="margin-right: 10px;">
                 <option value="">Select group...</option>
               </select>
@@ -651,8 +681,8 @@
             `;
             pendingContainer.appendChild(deviceDiv);
 
-            // Load groups for this device
-            loadGroupsForDevice(device.id);
+            // Load groups for this device (prioritize suggested groups)
+            loadGroupsForDevice(device.id, device.suggestedGroups || []);
           });
         }
 
@@ -683,17 +713,43 @@
       }
     }
 
-    async function loadGroupsForDevice(deviceId) {
+    async function loadGroupsForDevice(deviceId, suggestedGroups = []) {
       try {
         const res = await fetch('/api/devices/groups');
-        const groups = await res.json();
+        const allGroups = await res.json();
         const select = document.getElementById(`groupSelect_${deviceId}`);
-        groups.forEach(group => {
-          const option = document.createElement('option');
-          option.value = group.id;
-          option.textContent = group.name;
-          select.appendChild(option);
-        });
+
+        // Clear existing options
+        select.innerHTML = '<option value="">Select group...</option>';
+
+        // Add suggested groups first (those matching the device's API key)
+        if (suggestedGroups.length > 0) {
+          const suggestedOptGroup = document.createElement('optgroup');
+          suggestedOptGroup.label = 'Suggested Groups (API Key Match)';
+          suggestedGroups.forEach(group => {
+            const option = document.createElement('option');
+            option.value = group.id;
+            option.textContent = `${group.name} ✓`;
+            option.style.fontWeight = 'bold';
+            option.style.color = '#27ae60';
+            suggestedOptGroup.appendChild(option);
+          });
+          select.appendChild(suggestedOptGroup);
+        }
+
+        // Add all other groups
+        const otherGroups = allGroups.filter(g => !suggestedGroups.some(sg => sg.id === g.id));
+        if (otherGroups.length > 0) {
+          const otherOptGroup = document.createElement('optgroup');
+          otherOptGroup.label = 'All Groups';
+          otherGroups.forEach(group => {
+            const option = document.createElement('option');
+            option.value = group.id;
+            option.textContent = group.name;
+            otherOptGroup.appendChild(option);
+          });
+          select.appendChild(otherOptGroup);
+        }
       } catch (error) {
         console.error('Failed to load groups for device:', error);
       }

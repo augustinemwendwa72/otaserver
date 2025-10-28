@@ -40,6 +40,9 @@ router.get('/check', (req, res) => {
     return res.status(400).json({ message: 'Device ID required' });
   }
 
+  // Get the API key the device provided
+  const providedKey = req.header('x-api-key') || req.query.api_key;
+
   // Load device and group data
   const devices = JSON.parse(fs.readFileSync(path.join(__dirname, '../devices.json'), 'utf8') || '[]');
   const groups = JSON.parse(fs.readFileSync(path.join(__dirname, '../groups.json'), 'utf8') || '[]');
@@ -55,7 +58,8 @@ router.get('/check', (req, res) => {
       blacklisted: false,
       firstSeen: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
-      connectionCount: 1
+      connectionCount: 1,
+      providedApiKey: providedKey // Store the API key the device provided
     };
     devices.push(device);
     fs.writeFileSync(path.join(__dirname, '../devices.json'), JSON.stringify(devices, null, 2));
@@ -66,7 +70,7 @@ router.get('/check', (req, res) => {
       deviceId,
       action: 'connection_attempt',
       timestamp: new Date().toISOString(),
-      details: 'First connection attempt'
+      details: `First connection attempt with API key: ${providedKey || 'none'}`
     });
     fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
 
@@ -102,8 +106,7 @@ router.get('/check', (req, res) => {
     return res.status(404).json({ message: 'Device group not found' });
   }
 
-  // Check API key
-  const providedKey = req.header('x-api-key') || req.query.api_key;
+  // Check API key (reuse the providedKey from earlier)
   if (!providedKey || providedKey !== group.apiKey) {
     return res.status(401).json({ message: 'Invalid API key for device group' });
   }
@@ -178,6 +181,9 @@ router.get('/firmware.bin', (req, res) => {
     if (!providedKey || providedKey !== group.apiKey) {
       return res.status(401).end('Invalid API key');
     }
+
+    // Make deviceId available for logging
+    var deviceIdForLogging = deviceId;
   }
 
   const groupFirmwarePath = path.join(__dirname, '../uploads', `firmware_${groupId}.bin`);
@@ -187,15 +193,17 @@ router.get('/firmware.bin', (req, res) => {
   const total = stat.size;
   const range = req.headers.range;
 
-  // Log download start
-  const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
-  logs.push({
-    deviceId,
-    action: 'download_start',
-    timestamp: new Date().toISOString(),
-    details: `Started downloading ${total} bytes`
-  });
-  fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+  // Log download start (only for device downloads, not admin downloads)
+  if (!isAdminDownload) {
+    const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
+    logs.push({
+      deviceId: deviceIdForLogging,
+      action: 'download_start',
+      timestamp: new Date().toISOString(),
+      details: `Started downloading ${total} bytes`
+    });
+    fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+  }
 
   if (range) {
     const parts = range.replace(/bytes=/, '').split('-');
@@ -215,14 +223,16 @@ router.get('/firmware.bin', (req, res) => {
     });
 
     file.on('end', () => {
-      const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
-      logs.push({
-        deviceId,
-        action: 'download_progress',
-        timestamp: new Date().toISOString(),
-        details: `Downloaded ${downloaded} bytes (${Math.round((downloaded / chunkSize) * 100)}% of chunk)`
-      });
-      fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+      if (!isAdminDownload) {
+        const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
+        logs.push({
+          deviceId: deviceIdForLogging,
+          action: 'download_progress',
+          timestamp: new Date().toISOString(),
+          details: `Downloaded ${downloaded} bytes (${Math.round((downloaded / chunkSize) * 100)}% of chunk)`
+        });
+        fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+      }
     });
 
     res.writeHead(206, {
@@ -243,14 +253,16 @@ router.get('/firmware.bin', (req, res) => {
     });
 
     file.on('end', () => {
-      const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
-      logs.push({
-        deviceId,
-        action: 'download_complete',
-        timestamp: new Date().toISOString(),
-        details: `Successfully downloaded ${downloaded} bytes (100%)`
-      });
-      fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+      if (!isAdminDownload) {
+        const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
+        logs.push({
+          deviceId: deviceIdForLogging,
+          action: 'download_complete',
+          timestamp: new Date().toISOString(),
+          details: `Successfully downloaded ${downloaded} bytes (100%)`
+        });
+        fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+      }
     });
 
     res.writeHead(200, {

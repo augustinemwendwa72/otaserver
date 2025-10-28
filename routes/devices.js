@@ -138,11 +138,15 @@ router.get('/devices', (req, res) => {
     const devices = loadDevices();
     const groups = loadGroups();
 
-    // Add group names to devices
-    const devicesWithGroups = devices.map(device => ({
-      ...device,
-      groupName: groups.find(g => g.id === device.groupId)?.name || 'Unknown'
-    }));
+    // Add group names and suggested groups to devices
+    const devicesWithGroups = devices.map(device => {
+      const suggestedGroups = groups.filter(g => g.apiKey === device.providedApiKey);
+      return {
+        ...device,
+        groupName: groups.find(g => g.id === device.groupId)?.name || 'Unknown',
+        suggestedGroups: suggestedGroups.map(g => ({ id: g.id, name: g.name }))
+      };
+    });
 
     res.json(devicesWithGroups);
   } catch (error) {

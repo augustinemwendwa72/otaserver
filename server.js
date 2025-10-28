@@ -83,5 +83,10 @@ app.get('/', (req, res) => {
   res.redirect('/login.html');
 });
 
+// Handle direct access to index.html (redirect to login)
+app.get('/index.html', (req, res) => {
+  res.redirect('/login.html');
+});
+
 const PORT = CONFIG.port || process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`✅ OTA Server running on port ${PORT}`));
