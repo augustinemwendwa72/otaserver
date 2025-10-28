@@ -149,30 +149,35 @@ router.get('/manifest.json', requireApiKey, (req, res) => {
 // Serve firmware with proper headers and support range requests
 router.get('/firmware.bin', (req, res) => {
   const groupId = req.query.group_id;
+  const isAdminDownload = req.query.admin_download === 'true';
+
   if (!groupId) {
     return res.status(400).end('Group ID required');
   }
 
-  const deviceId = req.query.device_id || req.header('x-device-id');
-  if (!deviceId) {
-    return res.status(400).end('Device ID required');
-  }
+  // For admin downloads, skip device validation
+  if (!isAdminDownload) {
+    const deviceId = req.query.device_id || req.header('x-device-id');
+    if (!deviceId) {
+      return res.status(400).end('Device ID required');
+    }
 
-  // Validate device and group
-  const devices = JSON.parse(fs.readFileSync(path.join(__dirname, '../devices.json'), 'utf8') || '[]');
-  const groups = JSON.parse(fs.readFileSync(path.join(__dirname, '../groups.json'), 'utf8') || '[]');
+    // Validate device and group
+    const devices = JSON.parse(fs.readFileSync(path.join(__dirname, '../devices.json'), 'utf8') || '[]');
+    const groups = JSON.parse(fs.readFileSync(path.join(__dirname, '../groups.json'), 'utf8') || '[]');
 
-  const device = devices.find(d => d.id === deviceId);
-  const group = groups.find(g => g.id === groupId);
+    const device = devices.find(d => d.id === deviceId);
+    const group = groups.find(g => g.id === groupId);
 
-  if (!device || !group || device.groupId !== groupId || !device.approved || device.blacklisted) {
-    return res.status(403).end('Access denied');
-  }
+    if (!device || !group || device.groupId !== groupId || !device.approved || device.blacklisted) {
+      return res.status(403).end('Access denied');
+    }
 
-  // Check API key
-  const providedKey = req.header('x-api-key') || req.query.api_key;
-  if (!providedKey || providedKey !== group.apiKey) {
-    return res.status(401).end('Invalid API key');
+    // Check API key
+    const providedKey = req.header('x-api-key') || req.query.api_key;
+    if (!providedKey || providedKey !== group.apiKey) {
+      return res.status(401).end('Invalid API key');
+    }
   }
 
   const groupFirmwarePath = path.join(__dirname, '../uploads', `firmware_${groupId}.bin`);

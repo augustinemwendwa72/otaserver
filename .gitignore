@@ -3,8 +3,7 @@ package-lock.json
 package.json
 .gitignore
 config.json
-uploads/firmware.bin
-uploads/version.txt
+uploads/
 auth_keys.json
 device_logs.json
 devices.json

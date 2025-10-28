@@ -37,15 +37,15 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Serve static files only for authenticated users
-app.use((req, res, next) => {
-  if (req.path === '/login.html' || req.path.startsWith('/css/') || req.path.startsWith('/js/')) {
-    return express.static('public')(req, res, next);
-  }
-  if (!req.session.user && req.path !== '/') {
+// Serve static files
+app.use(express.static('public'));
+
+// Protect admin routes
+app.use('/admin.html', (req, res, next) => {
+  if (!req.session.user) {
     return res.redirect('/login.html');
   }
-  express.static('public')(req, res, next);
+  next();
 });
 
 // load config
@@ -78,13 +78,9 @@ app.use('/api/config', uploadRoutes); // Configuration endpoints
 app.use('/api/devices', deviceRoutes);
 app.use('/deviceapi', otadriveRoutes); // OTAdrive-style endpoint
 
-// Redirect root to login if not authenticated
+// Always redirect root to login page
 app.get('/', (req, res) => {
-  if (req.session.user) {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  } else {
-    res.redirect('/login.html');
-  }
+  res.redirect('/login.html');
 });
 
 const PORT = CONFIG.port || process.env.PORT || 3000;
