@@ -1,0 +1,179 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>OTAdrive - Authentication</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: system-ui, -apple-system, Arial, sans-serif; margin: 0; padding: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .auth-container { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 400px; position: relative; overflow: hidden; }
+    h1 { text-align: center; margin-bottom: 30px; color: #2c3e50; }
+    .form-group { margin-bottom: 20px; }
+    label { display: block; margin-bottom: 8px; font-weight: 600; color: #2c3e50; }
+    input[type="email"], input[type="password"], input[type="text"] { width: 100%; padding: 12px; border: 2px solid #e1e8ed; border-radius: 8px; font-size: 16px; transition: border-color 0.3s ease; box-sizing: border-box; }
+    input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focus { outline: none; border-color: #3498db; }
+    .btn { display: block; width: 100%; padding: 12px; border-radius: 8px; border: none; background: #3498db; color: white; font-weight: 600; cursor: pointer; transition: background 0.3s ease; font-size: 16px; margin-top: 10px; }
+    .btn:hover { background: #2980b9; }
+    .btn-secondary { background: #95a5a6; margin-top: 15px; }
+    .btn-secondary:hover { background: #7f8c8d; }
+    .alert { padding: 10px; border-radius: 8px; margin-bottom: 20px; display: none; }
+    .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .toggle-container { position: absolute; top: 20px; right: 20px; }
+    .toggle-btn { background: none; border: none; color: #3498db; cursor: pointer; font-size: 14px; text-decoration: underline; }
+    .form-container { display: none; }
+    .form-container.active { display: block; }
+    .info { text-align: center; margin-top: 20px; color: #7f8c8d; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="auth-container">
+    <div class="toggle-container">
+      <button class="toggle-btn" id="toggleBtn">Sign Up</button>
+    </div>
+
+    <h1 id="formTitle">🚀 OTAdrive</h1>
+    <div id="alert" class="alert"></div>
+
+    <!-- Sign In Form -->
+    <div class="form-container active" id="signinForm">
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="signinEmail">Email</label>
+          <input type="email" id="signinEmail" name="email" required>
+        </div>
+        <div class="form-group">
+          <label for="signinPassword">Password</label>
+          <input type="password" id="signinPassword" name="password" required>
+        </div>
+        <button class="btn" type="submit">Sign In</button>
+      </form>
+    </div>
+
+    <!-- Sign Up Form -->
+    <div class="form-container" id="signupForm">
+      <form id="signupFormElement">
+        <div class="form-group">
+          <label for="signupEmail">Email</label>
+          <input type="email" id="signupEmail" name="email" required>
+        </div>
+        <div class="form-group">
+          <label for="signupPassword">Password</label>
+          <input type="password" id="signupPassword" name="password" required>
+        </div>
+        <div class="form-group">
+          <label for="authKey">Authentication Key</label>
+          <input type="text" id="authKey" name="authKey" placeholder="Enter auth key" required>
+        </div>
+        <button class="btn" type="submit">Sign Up</button>
+      </form>
+    </div>
+
+    <div class="info">
+      Authentication key will be sent to your email for verification
+    </div>
+  </div>
+
+  <script>
+    const toggleBtn = document.getElementById('toggleBtn');
+    const formTitle = document.getElementById('formTitle');
+    const signinForm = document.getElementById('signinForm');
+    const signupForm = document.getElementById('signupForm');
+    const alertDiv = document.getElementById('alert');
+
+    let isSignUp = false;
+
+    toggleBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      isSignUp = !isSignUp;
+
+      if (isSignUp) {
+        signinForm.classList.remove('active');
+        signupForm.classList.add('active');
+        formTitle.textContent = 'Sign Up - OTAdrive';
+        toggleBtn.textContent = 'Sign In';
+      } else {
+        signupForm.classList.remove('active');
+        signinForm.classList.add('active');
+        formTitle.textContent = '🚀 OTAdrive';
+        toggleBtn.textContent = 'Sign Up';
+      }
+    });
+
+    // Sign In Form Handler
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: formData.get('email'),
+            password: formData.get('password')
+          })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          alertDiv.className = 'alert alert-success';
+          alertDiv.textContent = data.message;
+          alertDiv.style.display = 'block';
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 1000);
+        } else {
+          alertDiv.className = 'alert alert-error';
+          alertDiv.textContent = data.message;
+          alertDiv.style.display = 'block';
+        }
+      } catch (error) {
+        alertDiv.className = 'alert alert-error';
+        alertDiv.textContent = 'Sign in failed: ' + error.message;
+        alertDiv.style.display = 'block';
+      }
+    });
+
+    // Sign Up Form Handler
+    document.getElementById('signupFormElement').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+
+      try {
+        const res = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: formData.get('email'),
+            password: formData.get('password'),
+            authKey: formData.get('authKey')
+          })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          alertDiv.className = 'alert alert-success';
+          alertDiv.textContent = data.message;
+          alertDiv.style.display = 'block';
+          // Switch to sign in form after successful signup
+          setTimeout(() => {
+            toggleBtn.click();
+            alertDiv.style.display = 'none';
+          }, 2000);
+        } else {
+          alertDiv.className = 'alert alert-error';
+          alertDiv.textContent = data.message;
+          alertDiv.style.display = 'block';
+        }
+      } catch (error) {
+        alertDiv.className = 'alert alert-error';
+        alertDiv.textContent = 'Sign up failed: ' + error.message;
+        alertDiv.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>

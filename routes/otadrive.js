@@ -34,18 +34,107 @@ function requireApiKey(req, res, next){
 }
 
 // Device check endpoint: returns version and manifest
-router.get('/check', requireApiKey, (req, res) => {
-  if (!fs.existsSync(versionFile)) {
-    return res.status(404).json({ message: 'No firmware uploaded yet.' });
+router.get('/check', (req, res) => {
+  const deviceId = req.query.device_id || req.header('x-device-id');
+  if (!deviceId) {
+    return res.status(400).json({ message: 'Device ID required' });
   }
-  const latestVersion = fs.readFileSync(versionFile,'utf8').trim();
-  const md5 = getFirmwareMD5();
-  const stat = fs.existsSync(firmwarePath) ? fs.statSync(firmwarePath) : null;
+
+  // Load device and group data
+  const devices = JSON.parse(fs.readFileSync(path.join(__dirname, '../devices.json'), 'utf8') || '[]');
+  const groups = JSON.parse(fs.readFileSync(path.join(__dirname, '../groups.json'), 'utf8') || '[]');
+
+  let device = devices.find(d => d.id === deviceId);
+
+  // If device doesn't exist, create pending entry
+  if (!device) {
+    device = {
+      id: deviceId,
+      groupId: null,
+      approved: false,
+      blacklisted: false,
+      firstSeen: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+      connectionCount: 1
+    };
+    devices.push(device);
+    fs.writeFileSync(path.join(__dirname, '../devices.json'), JSON.stringify(devices, null, 2));
+
+    // Log connection attempt
+    const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
+    logs.push({
+      deviceId,
+      action: 'connection_attempt',
+      timestamp: new Date().toISOString(),
+      details: 'First connection attempt'
+    });
+    fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+
+    return res.status(403).json({ message: 'Device not approved. Waiting for manual approval.' });
+  }
+
+  // Update last seen
+  device.lastSeen = new Date().toISOString();
+  device.connectionCount = (device.connectionCount || 0) + 1;
+  fs.writeFileSync(path.join(__dirname, '../devices.json'), JSON.stringify(devices, null, 2));
+
+  // Check if blacklisted
+  if (device.blacklisted) {
+    if (device.blacklistUntil && new Date(device.blacklistUntil) < new Date()) {
+      // Blacklist expired
+      device.blacklisted = false;
+      device.blacklistReason = null;
+      device.blacklistUntil = null;
+      fs.writeFileSync(path.join(__dirname, '../devices.json'), JSON.stringify(devices, null, 2));
+    } else {
+      return res.status(403).json({ message: 'Device is blacklisted' });
+    }
+  }
+
+  // Check if approved
+  if (!device.approved) {
+    return res.status(403).json({ message: 'Device not approved. Waiting for manual approval.' });
+  }
+
+  // Find device group
+  const group = groups.find(g => g.id === device.groupId);
+  if (!group) {
+    return res.status(404).json({ message: 'Device group not found' });
+  }
+
+  // Check API key
+  const providedKey = req.header('x-api-key') || req.query.api_key;
+  if (!providedKey || providedKey !== group.apiKey) {
+    return res.status(401).json({ message: 'Invalid API key for device group' });
+  }
+
+  // Check if group has firmware
+  const groupFirmwarePath = path.join(__dirname, '../uploads', `firmware_${group.id}.bin`);
+  const groupVersionFile = path.join(__dirname, '../uploads', `version_${group.id}.txt`);
+
+  if (!fs.existsSync(groupVersionFile)) {
+    return res.status(404).json({ message: 'No firmware available for this group.' });
+  }
+
+  const latestVersion = fs.readFileSync(groupVersionFile,'utf8').trim();
+  const md5 = getFirmwareMD5(groupFirmwarePath);
+  const stat = fs.existsSync(groupFirmwarePath) ? fs.statSync(groupFirmwarePath) : null;
+
+  // Log successful check
+  const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
+  logs.push({
+    deviceId,
+    action: 'firmware_check',
+    timestamp: new Date().toISOString(),
+    details: `Checked firmware version ${latestVersion}`
+  });
+  fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+
   res.json({
     version: latestVersion,
     md5,
     size: stat ? stat.size : 0,
-    url: '/deviceapi/firmware.bin'
+    url: `/deviceapi/firmware.bin?group_id=${group.id}`
   });
 });
 
@@ -58,12 +147,51 @@ router.get('/manifest.json', requireApiKey, (req, res) => {
 });
 
 // Serve firmware with proper headers and support range requests
-router.get('/firmware.bin', requireApiKey, (req, res) => {
-  if (!fs.existsSync(firmwarePath)) return res.status(404).end('No firmware');
+router.get('/firmware.bin', (req, res) => {
+  const groupId = req.query.group_id;
+  if (!groupId) {
+    return res.status(400).end('Group ID required');
+  }
 
-  const stat = fs.statSync(firmwarePath);
+  const deviceId = req.query.device_id || req.header('x-device-id');
+  if (!deviceId) {
+    return res.status(400).end('Device ID required');
+  }
+
+  // Validate device and group
+  const devices = JSON.parse(fs.readFileSync(path.join(__dirname, '../devices.json'), 'utf8') || '[]');
+  const groups = JSON.parse(fs.readFileSync(path.join(__dirname, '../groups.json'), 'utf8') || '[]');
+
+  const device = devices.find(d => d.id === deviceId);
+  const group = groups.find(g => g.id === groupId);
+
+  if (!device || !group || device.groupId !== groupId || !device.approved || device.blacklisted) {
+    return res.status(403).end('Access denied');
+  }
+
+  // Check API key
+  const providedKey = req.header('x-api-key') || req.query.api_key;
+  if (!providedKey || providedKey !== group.apiKey) {
+    return res.status(401).end('Invalid API key');
+  }
+
+  const groupFirmwarePath = path.join(__dirname, '../uploads', `firmware_${groupId}.bin`);
+  if (!fs.existsSync(groupFirmwarePath)) return res.status(404).end('No firmware');
+
+  const stat = fs.statSync(groupFirmwarePath);
   const total = stat.size;
   const range = req.headers.range;
+
+  // Log download start
+  const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
+  logs.push({
+    deviceId,
+    action: 'download_start',
+    timestamp: new Date().toISOString(),
+    details: `Started downloading ${total} bytes`
+  });
+  fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+
   if (range) {
     const parts = range.replace(/bytes=/, '').split('-');
     const start = parseInt(parts[0], 10);
@@ -73,7 +201,25 @@ router.get('/firmware.bin', requireApiKey, (req, res) => {
       return;
     }
     const chunkSize = (end - start) + 1;
-    const file = fs.createReadStream(firmwarePath, { start, end });
+    const file = fs.createReadStream(groupFirmwarePath, { start, end });
+
+    // Track partial download progress
+    let downloaded = 0;
+    file.on('data', (chunk) => {
+      downloaded += chunk.length;
+    });
+
+    file.on('end', () => {
+      const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
+      logs.push({
+        deviceId,
+        action: 'download_progress',
+        timestamp: new Date().toISOString(),
+        details: `Downloaded ${downloaded} bytes (${Math.round((downloaded / chunkSize) * 100)}% of chunk)`
+      });
+      fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+    });
+
     res.writeHead(206, {
       'Content-Range': `bytes ${start}-${end}/${total}`,
       'Accept-Ranges': 'bytes',
@@ -82,14 +228,32 @@ router.get('/firmware.bin', requireApiKey, (req, res) => {
       'Cache-Control': 'no-cache'
     });
     file.pipe(res);
-    return;
   } else {
+    const file = fs.createReadStream(groupFirmwarePath);
+
+    // Track full download progress
+    let downloaded = 0;
+    file.on('data', (chunk) => {
+      downloaded += chunk.length;
+    });
+
+    file.on('end', () => {
+      const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
+      logs.push({
+        deviceId,
+        action: 'download_complete',
+        timestamp: new Date().toISOString(),
+        details: `Successfully downloaded ${downloaded} bytes (100%)`
+      });
+      fs.writeFileSync(path.join(__dirname, '../device_logs.json'), JSON.stringify(logs, null, 2));
+    });
+
     res.writeHead(200, {
       'Content-Length': total,
       'Content-Type': 'application/octet-stream',
       'Cache-Control': 'no-cache'
     });
-    fs.createReadStream(firmwarePath).pipe(res);
+    file.pipe(res);
   }
 });
 

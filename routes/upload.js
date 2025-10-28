@@ -16,13 +16,44 @@ const upload = multer({ storage });
 
 // Upload firmware via browser form
 router.post('/', upload.single('firmware'), (req, res) => {
-  const { version, api_key } = req.body;
+  const { version, api_key, group_id } = req.body;
   if (!version) return res.status(400).json({ message: 'Version required' });
 
-  fs.writeFileSync(path.join(uploadDir, 'version.txt'), version.trim());
+  let versionFile, firmwareFile;
 
-  // if API key provided, persist to config
-  if (api_key) {
+  if (group_id) {
+    // Group-specific firmware
+    const groups = JSON.parse(fs.readFileSync(path.join(__dirname, '../groups.json'), 'utf8') || '[]');
+    const group = groups.find(g => g.id === group_id);
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    versionFile = path.join(uploadDir, `version_${group_id}.txt`);
+    firmwareFile = path.join(uploadDir, `firmware_${group_id}.bin`);
+
+    // Update group firmware info
+    group.firmware = {
+      version: version.trim(),
+      uploadedAt: new Date().toISOString(),
+      size: req.file.size
+    };
+    fs.writeFileSync(path.join(__dirname, '../groups.json'), JSON.stringify(groups, null, 2));
+  } else {
+    // Legacy global firmware
+    versionFile = path.join(uploadDir, 'version.txt');
+    firmwareFile = path.join(uploadDir, 'firmware.bin');
+  }
+
+  fs.writeFileSync(versionFile, version.trim());
+
+  // Move uploaded file to correct location
+  if (req.file) {
+    fs.renameSync(req.file.path, firmwareFile);
+  }
+
+  // if API key provided, persist to config (legacy)
+  if (api_key && !group_id) {
     const configPath = path.join(__dirname, '../config.json');
     try {
       let cfg = {};
@@ -35,7 +66,7 @@ router.post('/', upload.single('firmware'), (req, res) => {
     }
   }
 
-  res.json({ message: 'Firmware uploaded successfully', version });
+  res.json({ message: 'Firmware uploaded successfully', version, group_id });
 });
 
 router.get('/check', (req, res) => {
