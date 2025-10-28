@@ -209,6 +209,35 @@
           </div>
         </div>
 
+        <!-- Device Details Tab (hidden by default) -->
+        <div class="tab-pane" id="deviceDetails" style="display: none;">
+          <div class="card">
+            <h3>📱 Device Details: <span id="deviceDetailId"></span></h3>
+            <button class="btn btn-secondary" onclick="closeDeviceDetails()">← Back to Devices</button>
+          </div>
+
+          <div class="card">
+            <h3>📊 Device Information</h3>
+            <div id="deviceInfo">
+              <!-- Device info will be loaded here -->
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>📋 Connection History</h3>
+            <div id="deviceConnectionHistory">
+              <!-- Connection history will be loaded here -->
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>⬇️ Firmware Downloads</h3>
+            <div id="deviceFirmwareHistory">
+              <!-- Firmware download history will be loaded here -->
+            </div>
+          </div>
+        </div>
+
         <!-- Downloads Tab -->
         <div class="tab-pane" id="downloads">
           <div class="card">
@@ -697,13 +726,15 @@
 
             const deviceDiv = document.createElement('div');
             deviceDiv.className = 'status-item';
+            deviceDiv.style.cursor = 'pointer';
+            deviceDiv.onclick = () => showDeviceDetails(device.id);
             deviceDiv.innerHTML = `
               <h4>Device ID: ${device.id}</h4>
               <p><strong>Status:</strong> <span style="color: ${statusClass === 'danger' ? 'red' : statusClass === 'success' ? 'green' : 'orange'}">${status}</span></p>
               <p><strong>Group:</strong> ${device.groupName || 'None'}</p>
               <p><strong>Last Seen:</strong> ${new Date(device.lastSeen).toLocaleString()}</p>
               <p><strong>Connection Count:</strong> ${device.connectionCount || 1}</p>
-              ${device.blacklisted ? `<button class="btn" onclick="unblacklistDevice('${device.id}')">Unblacklist</button>` : ''}
+              ${device.blacklisted ? `<button class="btn" onclick="unblacklistDevice('${device.id}'); event.stopPropagation();">Unblacklist</button>` : ''}
             `;
             allContainer.appendChild(deviceDiv);
           });
@@ -886,6 +917,106 @@
         showAlert(`Error changing password: ${error.message}`, 'error');
       }
     });
+
+    // Device details functions
+    async function showDeviceDetails(deviceId) {
+      document.getElementById('deviceDetailId').textContent = deviceId;
+
+      // Hide devices tab, show device details tab
+      document.getElementById('devices').style.display = 'none';
+      document.getElementById('deviceDetails').style.display = 'block';
+
+      // Load device information
+      await loadDeviceInfo(deviceId);
+      await loadDeviceConnectionHistory(deviceId);
+      await loadDeviceFirmwareHistory(deviceId);
+    }
+
+    function closeDeviceDetails() {
+      document.getElementById('deviceDetails').style.display = 'none';
+      document.getElementById('devices').style.display = 'block';
+    }
+
+    async function loadDeviceInfo(deviceId) {
+      try {
+        const res = await fetch('/api/devices/devices');
+        const devices = await res.json();
+        const device = devices.find(d => d.id === deviceId);
+
+        if (device) {
+          const status = device.blacklisted ? 'Blacklisted' : device.approved ? 'Approved' : 'Pending';
+          const statusColor = device.blacklisted ? 'red' : device.approved ? 'green' : 'orange';
+
+          document.getElementById('deviceInfo').innerHTML = `
+            <div class="status-item">
+              <h4>Device Information</h4>
+              <p><strong>Device ID:</strong> ${device.id}</p>
+              <p><strong>Status:</strong> <span style="color: ${statusColor}">${status}</span></p>
+              <p><strong>Group:</strong> ${device.groupName || 'None'}</p>
+              <p><strong>API Key Provided:</strong> ${device.providedApiKey || 'None'}</p>
+              <p><strong>First Seen:</strong> ${new Date(device.firstSeen).toLocaleString()}</p>
+              <p><strong>Last Seen:</strong> ${new Date(device.lastSeen).toLocaleString()}</p>
+              <p><strong>Total Connections:</strong> ${device.connectionCount || 1}</p>
+              ${device.blacklistReason ? `<p><strong>Blacklist Reason:</strong> ${device.blacklistReason}</p>` : ''}
+              ${device.blacklistUntil ? `<p><strong>Blacklist Until:</strong> ${new Date(device.blacklistUntil).toLocaleString()}</p>` : ''}
+            </div>
+          `;
+        }
+      } catch (error) {
+        console.error('Failed to load device info:', error);
+      }
+    }
+
+    async function loadDeviceConnectionHistory(deviceId) {
+      try {
+        const res = await fetch(`/api/devices/logs?deviceId=${deviceId}&limit=50`);
+        const logs = await res.json();
+
+        const container = document.getElementById('deviceConnectionHistory');
+        if (logs.length === 0) {
+          container.innerHTML = '<p>No connection history available.</p>';
+          return;
+        }
+
+        container.innerHTML = logs.map(log => `
+          <div class="status-item">
+            <p><strong>${log.action}</strong> - ${new Date(log.timestamp).toLocaleString()}</p>
+            <p><small>${log.details || 'No details'}</small></p>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Failed to load connection history:', error);
+      }
+    }
+
+    async function loadDeviceFirmwareHistory(deviceId) {
+      try {
+        const res = await fetch(`/api/devices/logs?deviceId=${deviceId}&limit=100`);
+        const logs = await res.json();
+
+        const firmwareLogs = logs.filter(log =>
+          log.action === 'download_start' ||
+          log.action === 'download_complete' ||
+          log.action === 'download_progress' ||
+          log.action === 'firmware_check'
+        );
+
+        const container = document.getElementById('deviceFirmwareHistory');
+        if (firmwareLogs.length === 0) {
+          container.innerHTML = '<p>No firmware activity for this device.</p>';
+          return;
+        }
+
+        container.innerHTML = firmwareLogs.map(log => `
+          <div class="status-item">
+            <p><strong>${log.action.replace('_', ' ').toUpperCase()}</strong> - ${new Date(log.timestamp).toLocaleString()}</p>
+            <p><small>${log.details || 'No details'}</small></p>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Failed to load firmware history:', error);
+      }
+    }
 
     document.getElementById('logoutBtn').addEventListener('click', async () => {
       try {

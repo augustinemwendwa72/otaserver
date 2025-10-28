@@ -11,9 +11,9 @@ const uploadDir = path.join(__dirname, '../uploads');
 const firmwarePath = path.join(uploadDir, 'firmware.bin');
 const versionFile = path.join(uploadDir, 'version.txt');
 
-function getFirmwareMD5() {
-  if (!fs.existsSync(firmwarePath)) return null;
-  const buffer = fs.readFileSync(firmwarePath);
+function getFirmwareMD5(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const buffer = fs.readFileSync(filePath);
   return crypto.createHash('md5').update(buffer).digest('hex');
 }
 
@@ -123,6 +123,12 @@ router.get('/check', (req, res) => {
   const md5 = getFirmwareMD5(groupFirmwarePath);
   const stat = fs.existsSync(groupFirmwarePath) ? fs.statSync(groupFirmwarePath) : null;
 
+  // Calculate MD5 if not cached
+  let finalMd5 = md5;
+  if (!finalMd5 && fs.existsSync(groupFirmwarePath)) {
+    finalMd5 = getFirmwareMD5(groupFirmwarePath);
+  }
+
   // Log successful check
   const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
   logs.push({
@@ -135,7 +141,7 @@ router.get('/check', (req, res) => {
 
   res.json({
     version: latestVersion,
-    md5,
+    md5: finalMd5,
     size: stat ? stat.size : 0,
     url: `/deviceapi/firmware.bin?group_id=${group.id}`
   });
