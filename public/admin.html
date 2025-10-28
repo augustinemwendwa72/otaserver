@@ -1,9 +1,10 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>OTAdrive - Advanced Local OTA Server</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<title>Mkenya OTADrive - Advanced Local OTA Server</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
   <style>
     body { font-family: system-ui, -apple-system, Arial, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; min-height: 100vh; }
     .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
@@ -94,7 +95,7 @@
 <body>
   <div class="container">
     <div class="header">
-      <h1>🚀 OTAdrive</h1>
+      <h1>🚀 Mkenya OTADrive</h1>
       <p class="subtitle">Advanced Local OTA Server for ESP32/Arduino Devices</p>
     </div>
 
@@ -196,6 +197,9 @@
         <div class="tab-pane" id="devices">
           <div class="card">
             <h3>⏳ Pending Approval</h3>
+            <div style="margin-bottom: 15px;">
+              <button class="btn btn-danger" id="clearPendingBtn">Clear All Pending Devices</button>
+            </div>
             <div id="pendingDevices">
               <!-- Pending devices will be loaded here -->
             </div>
@@ -312,6 +316,22 @@
         </div>
       </div>
     </div>
+
+    <!-- Footer -->
+    <footer style="text-align: center; margin-top: 40px; padding: 20px; background: rgba(255,255,255,0.1); border-radius: 12px; color: white;">
+      <div style="margin-bottom: 10px;">
+        <strong>Innovate Kenya</strong>
+      </div>
+      <div style="margin-bottom: 10px;">
+        <strong>Engineer:</strong> Augustine Mwendwa
+      </div>
+      <div style="margin-bottom: 10px;">
+        <strong>Contact:</strong> masterdeveloper254@gmail.com
+      </div>
+      <div>
+        <strong>WhatsApp:</strong> +254704863390
+      </div>
+    </footer>
   </div>
 
   <script>
@@ -631,6 +651,46 @@
       addConsoleEntry('Console cleared', 'warning');
     });
 
+    // Clear pending devices
+    document.getElementById('clearPendingBtn').addEventListener('click', async () => {
+      if (!confirm('Are you sure you want to clear all pending devices? This action cannot be undone.')) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/devices/pending/clear', { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok) {
+          showAlert(data.message);
+          loadDevices();
+        } else {
+          showAlert(`Failed to clear pending devices: ${data.message}`, 'error');
+        }
+      } catch (error) {
+        showAlert(`Error clearing pending devices: ${error.message}`, 'error');
+      }
+    });
+
+    // Delete device
+    async function deleteDevice(deviceId) {
+      if (!confirm('Are you sure you want to delete this device? This action cannot be undone.')) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/devices/devices/${deviceId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok) {
+          showAlert('Device deleted successfully');
+          loadDevices();
+        } else {
+          showAlert(`Failed to delete device: ${data.message}`, 'error');
+        }
+      } catch (error) {
+        showAlert(`Error deleting device: ${error.message}`, 'error');
+      }
+    }
+
     // Update API URLs when group selection changes
     document.getElementById('downloadGroup').addEventListener('change', (e) => {
       const groupId = e.target.value;
@@ -734,7 +794,13 @@
               <p><strong>Group:</strong> ${device.groupName || 'None'}</p>
               <p><strong>Last Seen:</strong> ${new Date(device.lastSeen).toLocaleString()}</p>
               <p><strong>Connection Count:</strong> ${device.connectionCount || 1}</p>
-              ${device.blacklisted ? `<button class="btn" onclick="unblacklistDevice('${device.id}'); event.stopPropagation();">Unblacklist</button>` : ''}
+              <div style="margin-top: 10px;">
+                ${device.blacklisted ?
+                  `<button class="btn" onclick="unblacklistDevice('${device.id}'); event.stopPropagation();">Unblacklist</button>` :
+                  `<button class="btn btn-danger" onclick="blacklistDevice('${device.id}'); event.stopPropagation();">Blacklist</button>`
+                }
+                <button class="btn btn-danger" onclick="deleteDevice('${device.id}'); event.stopPropagation();" style="margin-left: 10px;">Delete</button>
+              </div>
             `;
             allContainer.appendChild(deviceDiv);
           });

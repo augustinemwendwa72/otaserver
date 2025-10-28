@@ -246,6 +246,77 @@ router.post('/devices/:deviceId/unblacklist', (req, res) => {
   }
 });
 
+router.delete('/devices/:deviceId', (req, res) => {
+  const { deviceId } = req.params;
+
+  try {
+    const devices = loadDevices();
+    const deviceIndex = devices.findIndex(d => d.id === deviceId);
+
+    if (deviceIndex === -1) {
+      return res.status(404).json({ message: 'Device not found' });
+    }
+
+    devices.splice(deviceIndex, 1);
+    saveDevices(devices);
+
+    logDeviceActivity(deviceId, 'deleted', { deletedBy: req.session.user.username });
+
+    res.json({ message: 'Device deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to delete device' });
+  }
+});
+
+router.delete('/devices/pending/clear', (req, res) => {
+  try {
+    const devices = loadDevices();
+    const pendingDevices = devices.filter(d => !d.approved && !d.blacklisted);
+
+    // Remove all pending devices
+    const updatedDevices = devices.filter(d => d.approved || d.blacklisted);
+    saveDevices(updatedDevices);
+
+    // Log the clearing action
+    const logs = loadLogs();
+    logs.push({
+      deviceId: 'system',
+      action: 'pending_devices_cleared',
+      timestamp: new Date().toISOString(),
+      details: `Cleared ${pendingDevices.length} pending devices`
+    });
+    saveLogs(logs);
+
+    res.json({ message: `Cleared ${pendingDevices.length} pending devices successfully` });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to clear pending devices' });
+  }
+});
+
+router.post('/devices/:deviceId/unblacklist', (req, res) => {
+  const { deviceId } = req.params;
+
+  try {
+    const devices = loadDevices();
+    const device = devices.find(d => d.id === deviceId);
+
+    if (!device) {
+      return res.status(404).json({ message: 'Device not found' });
+    }
+
+    device.blacklisted = false;
+    device.blacklistReason = null;
+    device.blacklistUntil = null;
+    saveDevices(devices);
+
+    logDeviceActivity(deviceId, 'unblacklisted', { unblacklistedBy: req.session.user.username });
+
+    res.json({ message: 'Device unblacklisted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to unblacklist device' });
+  }
+});
+
 // Device logs
 router.get('/logs', (req, res) => {
   try {

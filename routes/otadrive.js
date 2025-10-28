@@ -91,7 +91,7 @@ router.get('/check', (req, res) => {
       device.blacklistUntil = null;
       fs.writeFileSync(path.join(__dirname, '../devices.json'), JSON.stringify(devices, null, 2));
     } else {
-      return res.status(403).json({ message: 'Device is blacklisted' });
+      return res.status(403).json({ message: 'Device Blacklisted' });
     }
   }
 
