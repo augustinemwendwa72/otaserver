@@ -277,8 +277,16 @@ router.delete('/devices/pending/clear', (req, res) => {
     const updatedDevices = devices.filter(d => d.approved || d.blacklisted);
     saveDevices(updatedDevices);
 
-    // Log the clearing action
+    // Log the clearing action for each device
     const logs = loadLogs();
+    pendingDevices.forEach(device => {
+      logs.push({
+        deviceId: device.id,
+        action: 'device_deleted',
+        timestamp: new Date().toISOString(),
+        details: `Device deleted during pending devices clear`
+      });
+    });
     logs.push({
       deviceId: 'system',
       action: 'pending_devices_cleared',
@@ -321,11 +329,17 @@ router.post('/devices/:deviceId/unblacklist', (req, res) => {
 router.get('/logs', (req, res) => {
   try {
     const logs = loadLogs();
-    const { deviceId, limit = 100 } = req.query;
+    const { deviceId, limit = 100, since } = req.query;
 
     let filteredLogs = logs;
     if (deviceId) {
       filteredLogs = logs.filter(log => log.deviceId === deviceId);
+    }
+
+    // Filter by timestamp if provided
+    if (since) {
+      const sinceDate = new Date(since);
+      filteredLogs = filteredLogs.filter(log => new Date(log.timestamp) > sinceDate);
     }
 
     // Return most recent logs first
