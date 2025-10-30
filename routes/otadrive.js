@@ -157,47 +157,118 @@ router.get('/manifest.json', requireApiKey, (req, res) => {
 
 // Serve firmware with proper headers and support range requests
 router.get('/firmware.bin', (req, res) => {
+  console.log('=== FIRMWARE.BIN REQUEST RECEIVED ===');
+  console.log('Full URL:', req.url);
+  console.log('Query parameters:', JSON.stringify(req.query, null, 2));
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+
   const groupId = req.query.group_id;
   const isAdminDownload = req.query.admin_download === 'true';
 
+  console.log('Parsed groupId:', groupId);
+  console.log('Parsed isAdminDownload:', isAdminDownload);
+  console.log('groupId exists:', !!groupId);
+  console.log('groupId length:', groupId ? groupId.length : 'N/A');
+  console.log('groupId is empty string:', groupId === '');
+
   if (!groupId) {
+    console.log('ERROR: Group ID is missing or empty - returning 400');
     return res.status(400).end('Group ID required');
   }
 
+  console.log('Group ID validation passed, proceeding...');
+
   // For admin downloads, skip device validation
   if (!isAdminDownload) {
+    console.log('Performing device validation...');
     const deviceId = req.query.device_id || req.header('x-device-id');
+    console.log('deviceId from query:', req.query.device_id);
+    console.log('deviceId from header:', req.header('x-device-id'));
+    console.log('Final deviceId:', deviceId);
+
     if (!deviceId) {
+      console.log('ERROR: Device ID is missing - returning 400');
       return res.status(400).end('Device ID required');
     }
 
+    console.log('Loading device and group data...');
     // Validate device and group
     const devices = JSON.parse(fs.readFileSync(path.join(__dirname, '../devices.json'), 'utf8') || '[]');
     const groups = JSON.parse(fs.readFileSync(path.join(__dirname, '../groups.json'), 'utf8') || '[]');
 
+    console.log('Searching for device:', deviceId);
     const device = devices.find(d => d.id === deviceId);
-    const group = groups.find(g => g.id === groupId);
+    console.log('Device found:', !!device);
 
-    if (!device || !group || device.groupId !== groupId || !device.approved || device.blacklisted) {
-      return res.status(403).end('Access denied');
+    console.log('Searching for group:', groupId);
+    const group = groups.find(g => g.id === groupId);
+    console.log('Group found:', !!group);
+
+    if (!device) {
+      console.log('ERROR: Device not found - returning 403');
+      return res.status(403).end('Device not found');
+    }
+
+    if (!group) {
+      console.log('ERROR: Group not found - returning 403');
+      return res.status(403).end('Group not found');
+    }
+
+    console.log('Device groupId:', device.groupId);
+    console.log('Requested groupId:', groupId);
+    console.log('Device approved:', device.approved);
+    console.log('Device blacklisted:', device.blacklisted);
+
+    if (device.groupId !== groupId) {
+      console.log('ERROR: Device does not belong to this group - returning 403');
+      return res.status(403).end('Device does not belong to this group');
+    }
+
+    if (!device.approved) {
+      console.log('ERROR: Device not approved - returning 403');
+      return res.status(403).end('Device not approved');
+    }
+
+    if (device.blacklisted) {
+      console.log('ERROR: Device is blacklisted - returning 403');
+      return res.status(403).end('Device is blacklisted');
     }
 
     // Check API key
     const providedKey = req.header('x-api-key') || req.query.api_key;
+    console.log('API key from header:', req.header('x-api-key'));
+    console.log('API key from query:', req.query.api_key);
+    console.log('Final providedKey:', providedKey);
+    console.log('Expected group API key:', group.apiKey);
+
     if (!providedKey || providedKey !== group.apiKey) {
+      console.log('ERROR: Invalid API key - returning 401');
       return res.status(401).end('Invalid API key');
     }
 
+    console.log('Device validation passed');
     // Make deviceId available for logging
     var deviceIdForLogging = deviceId;
+  } else {
+    console.log('Admin download - skipping device validation');
   }
 
   const groupFirmwarePath = path.join(__dirname, '../uploads', `firmware_${groupId}.bin`);
-  if (!fs.existsSync(groupFirmwarePath)) return res.status(404).end('No firmware');
+  console.log('Firmware path:', groupFirmwarePath);
+  console.log('Firmware exists:', fs.existsSync(groupFirmwarePath));
+
+  if (!fs.existsSync(groupFirmwarePath)) {
+    console.log('ERROR: Firmware file not found - returning 404');
+    return res.status(404).end('No firmware');
+  }
 
   const stat = fs.statSync(groupFirmwarePath);
   const total = stat.size;
   const range = req.headers.range;
+
+  console.log('Firmware size:', total);
+  console.log('Range header:', range);
+  console.log('Range from query:', req.query.Range);
 
   // Log download start (only for device downloads, not admin downloads)
   if (!isAdminDownload) {
@@ -212,14 +283,22 @@ router.get('/firmware.bin', (req, res) => {
   }
 
   if (range) {
+    console.log('Processing Range header request');
     const parts = range.replace(/bytes=/, '').split('-');
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+
+    console.log('Range parts:', parts);
+    console.log('Start:', start, 'End:', end, 'Total:', total);
+
     if (start >= total || end >= total) {
+      console.log('ERROR: Range out of bounds - returning 416');
       res.status(416).set('Content-Range', `bytes */${total}`).end();
       return;
     }
     const chunkSize = (end - start) + 1;
+    console.log('Chunk size:', chunkSize);
+
     const file = fs.createReadStream(groupFirmwarePath, { start, end });
 
     // Track partial download progress
@@ -241,6 +320,7 @@ router.get('/firmware.bin', (req, res) => {
       }
     });
 
+    console.log('Sending 206 Partial Content response');
     res.writeHead(206, {
       'Content-Range': `bytes ${start}-${end}/${total}`,
       'Accept-Ranges': 'bytes',
@@ -250,6 +330,7 @@ router.get('/firmware.bin', (req, res) => {
     });
     file.pipe(res);
   } else {
+    console.log('Processing full file request (no Range header)');
     const file = fs.createReadStream(groupFirmwarePath);
 
     // Track full download progress
@@ -259,6 +340,7 @@ router.get('/firmware.bin', (req, res) => {
     });
 
     file.on('end', () => {
+      console.log('Full file download completed, bytes:', downloaded);
       if (!isAdminDownload) {
         const logs = JSON.parse(fs.readFileSync(path.join(__dirname, '../device_logs.json'), 'utf8') || '[]');
         logs.push({
@@ -271,6 +353,7 @@ router.get('/firmware.bin', (req, res) => {
       }
     });
 
+    console.log('Sending 200 OK response for full file');
     res.writeHead(200, {
       'Content-Length': total,
       'Content-Type': 'application/octet-stream',
@@ -278,6 +361,8 @@ router.get('/firmware.bin', (req, res) => {
     });
     file.pipe(res);
   }
+
+  console.log('=== FIRMWARE.BIN REQUEST PROCESSING COMPLETE ===');
 });
 
 module.exports = router;

@@ -135,4 +135,31 @@ router.post('/change-password', async (req, res) => {
   }
 });
 
+// Verify password for sensitive operations
+router.post('/verify-password', async (req, res) => {
+  const { password } = req.body;
+
+  if (!req.session.user) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+
+  if (!password) {
+    return res.status(400).json({ message: 'Password is required' });
+  }
+
+  try {
+    const users = JSON.parse(fs.readFileSync(usersFile, 'utf8'));
+    const user = users.find(u => u.email === req.session.user.email);
+
+    if (!user || !await bcrypt.compare(password, user.password)) {
+      return res.status(401).json({ message: 'Invalid password' });
+    }
+
+    res.json({ valid: true });
+  } catch (error) {
+    console.error('Password verification error:', error);
+    res.status(500).json({ message: 'Password verification failed' });
+  }
+});
+
 module.exports = router;

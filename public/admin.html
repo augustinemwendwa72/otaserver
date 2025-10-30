@@ -320,6 +320,13 @@
           </div>
 
           <div class="card">
+            <h3>🔑 API Keys</h3>
+            <div id="apiKeysContainer">
+              <!-- API keys will be loaded here -->
+            </div>
+          </div>
+
+          <div class="card">
             <h3>ℹ️ API Information</h3>
             <div class="status-grid">
               <div class="status-item">
@@ -394,6 +401,9 @@
             break;
           case 'downloads':
             loadGroupsForDownload();
+            break;
+          case 'settings':
+            loadApiKeys();
             break;
         }
       });
@@ -1400,6 +1410,70 @@
         dropdown.classList.remove('show');
       }
     });
+
+    // Load API keys
+    async function loadApiKeys() {
+      try {
+        const res = await fetch('/api/devices/groups');
+        const groups = await res.json();
+        const container = document.getElementById('apiKeysContainer');
+
+        if (groups.length === 0) {
+          container.innerHTML = '<p>No API keys available. Create a group first.</p>';
+          return;
+        }
+
+        container.innerHTML = groups.map(group => `
+          <div class="status-item">
+            <h4>${group.name}</h4>
+            <p><strong>API Key:</strong></p>
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+              <input type="password" id="apiKey_${group.id}" value="${group.apiKey}" readonly style="flex: 1; font-family: 'Courier New', monospace; background: #f8f9fa;">
+              <button class="btn btn-secondary" onclick="toggleApiKeyVisibility('${group.id}')">Show</button>
+            </div>
+            <p><strong>Description:</strong> ${group.description || 'No description'}</p>
+            <p><strong>Created:</strong> ${new Date(group.createdAt).toLocaleString()}</p>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Failed to load API keys:', error);
+        document.getElementById('apiKeysContainer').innerHTML = '<p>Failed to load API keys.</p>';
+      }
+    }
+
+    // Toggle API key visibility with password prompt
+    async function toggleApiKeyVisibility(groupId) {
+      const input = document.getElementById(`apiKey_${groupId}`);
+      const button = input.nextElementSibling;
+
+      if (input.type === 'password') {
+        // Ask for account password to show the API key
+        const password = prompt('Enter your account password to reveal the API key:');
+        if (!password) return;
+
+        try {
+          const res = await fetch('/api/auth/verify-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+          });
+          const data = await res.json();
+
+          if (res.ok && data.valid) {
+            input.type = 'text';
+            button.textContent = 'Hide';
+            addConsoleEntry(`API key for group ${groupId} revealed`, 'warning');
+          } else {
+            showAlert('Invalid password. Access denied.', 'error');
+          }
+        } catch (error) {
+          showAlert('Failed to verify password.', 'error');
+        }
+      } else {
+        input.type = 'password';
+        button.textContent = 'Show';
+      }
+    }
 
     document.getElementById('logoutBtn').addEventListener('click', async () => {
       try {
