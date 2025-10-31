@@ -264,11 +264,12 @@ router.get('/firmware.bin', (req, res) => {
 
   const stat = fs.statSync(groupFirmwarePath);
   const total = stat.size;
-  const range = req.headers.range;
+  const range = req.headers.range || req.query['Range:bytes'];
 
   console.log('Firmware size:', total);
-  console.log('Range header:', range);
-  console.log('Range from query:', req.query.Range);
+  console.log('Range header:', req.headers.range);
+  console.log('Range from query:', req.query['Range:bytes']);
+  console.log('Using range:', range);
 
   // Log download start (only for device downloads, not admin downloads)
   if (!isAdminDownload) {
